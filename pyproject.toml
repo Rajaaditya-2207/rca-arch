@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rca-arch"
-version = "11.0.0"
+version = "1.0.0"
 description = "RCA v11: Ultra-Reasoning Architecture - Combines Mamba SSM, Gated Linear Attention (GLA), and Sliding Window Attention across specialized cognitive zones."
 readme = "README.md"
 license = {text = "MIT"}
