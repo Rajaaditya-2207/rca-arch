@@ -24,7 +24,7 @@ A hybrid sequence modeling architecture combining sliding window attention,
 linear recurrent mechanisms (GLA/SSM), and long-context cross-attention.
 """
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 __author__ = "Rajaaditya.R"
 __email__ = "rajaaditya.aadhi@gmail.com"
 
