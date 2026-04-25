@@ -480,32 +480,22 @@ class RCAModel(nn.Module):
                 zones["reasoning"].append(i)
         return zones
 
-    def save_pretrained(self, path: str, safe_serialization: bool = False):
+    def save_pretrained(self, path: str):
         """Save model and config to directory."""
         os.makedirs(path, exist_ok=True)
         self.config.to_json(os.path.join(path, "config.json"))
-        
-        if safe_serialization:
-            from safetensors.torch import save_file
-            save_file(self.state_dict(), os.path.join(path, "model.safetensors"))
-        else:
-            torch.save(self.state_dict(), os.path.join(path, "model.pt"))
+        torch.save(self.state_dict(), os.path.join(path, "model.pt"))
 
     @classmethod
     def from_pretrained(cls, path: str, **kwargs) -> "RCAModel":
         """Load model from directory."""
         config = RCAConfig.from_json(os.path.join(path, "config.json"))
         model = cls(config)
-        
-        safetensors_path = os.path.join(path, "model.safetensors")
-        pt_path = os.path.join(path, "model.pt")
-        
-        if os.path.exists(safetensors_path):
-            from safetensors.torch import load_file
-            state_dict = load_file(safetensors_path)
-        else:
-            state_dict = torch.load(pt_path, map_location="cpu", weights_only=True)
-            
+        state_dict = torch.load(
+            os.path.join(path, "model.pt"),
+            map_location="cpu",
+            weights_only=True,
+        )
         model.load_state_dict(state_dict)
         return model
 

@@ -71,6 +71,46 @@ class RCAConfig:
     use_torch_compile: bool = False
     compile_mode: str = "reduce-overhead"
 
+    # =========================================================================
+    # RCA-Mythos (v3.0) — Recurrent-Depth Architecture
+    # =========================================================================
+    # Set use_recurrent_depth=True to use RCAMythosModel instead of RCAModel.
+
+    use_recurrent_depth: bool = False
+
+    # Prelude: SSM blocks run once before the recurrent loop.
+    # These encode the input sequence into rich representation e.
+    mythos_prelude_layers: int = 4
+
+    # Coda: Reasoning blocks (SlidingWindow + MemTokens) run once after loop.
+    # These do the final precision pass on the loop-refined hidden state.
+    mythos_coda_layers: int = 2
+
+    # Recurrent Core: maximum T at training/inference.
+    # - Training: T ~ Uniform(1, max_loops) per batch step [Parcae optimal]
+    # - Inference: T = max_loops (or set explicitly via n_loops)
+    # Parcae scaling law: optimal μ_rec ∝ C^0.40 (FLOP budget C)
+    # Rule of thumb: 4 loops for 100M, 8 for 500M, 16 for 1B+
+    mythos_max_loops: int = 8
+
+    # LoRA depth adapter rank. Parameter overhead ≈ 2×dim×rank + max_loops×rank.
+    # Recommended: rank=16 for dim≤1024, rank=32 for dim≥2048.
+    mythos_lora_rank: int = 16
+
+    # ACT halting threshold. Positions with cumulative_p ≥ threshold stop looping.
+    # 0.99 is the Graves (2016) recommendation. Lower = fewer loops on average.
+    mythos_act_threshold: float = 0.99
+
+    # Fraction of hidden channels receiving loop index embedding signal.
+    # 0.125 = dim // 8 channels. More channels → stronger depth signal,
+    # but disrupts more of the existing feature space.
+    mythos_loop_embed_fraction: float = 0.125
+
+    # Random-loop training (Parcae): sample T ~ Uniform(1, max_loops) each step.
+    # This is the KEY to stable training and depth extrapolation at inference.
+    # Set False only for debugging or fixed-depth ablations.
+    mythos_random_loop_training: bool = True
+
     def __post_init__(self):
         """Validate config after initialization."""
         assert self.state_dim > 0, "state_dim must be positive"
@@ -382,5 +422,197 @@ class RCAConfig:
             ssm_zone_end=0.6,
             gla_zone_end=0.85,
             use_mqa=True,
+            gradient_checkpointing=True,
+        )
+
+    # =========================================================================
+    # RCA-Mythos Presets — Recurrent-Depth Architecture (v3.0)
+    # =========================================================================
+    # Loop counts follow Parcae scaling law: μ_rec ∝ C^0.40
+    # A 770M-param mythos model ≈ 1.3B flat-depth model quality.
+    #
+    # Architecture: SSM Prelude (once) → GLA Core (×T loops) → Reasoning Coda (once)
+    # =========================================================================
+
+    @classmethod
+    def rca_mythos_100m(cls) -> "RCAConfig":
+        """~100M params — RCA-Mythos, fits T4/P100 with room to spare.
+
+        Effective depth: 4 SSM (prelude) + 4 loops × 1 GLA + 2 Reasoning (coda)
+        Parcae equivalent: ≈ 130M flat model quality
+
+        Training budget (7 hrs):
+          T4:   ~700M tokens   (batch=8, grad_accum=4, fp16)
+          P100: ~1.1B tokens   (batch=8, grad_accum=4, fp16)
+
+        Optimal μ_rec = 4 loops (Parcae C^0.40 at ~100M FLOP budget).
+        """
+        return cls(
+            # Core dimensions
+            state_dim=512,
+            n_layers=6,
+            n_heads=8,
+            ssm_expand=2,
+            max_seq_len=4096,
+            dropout=0.1,
+            # Attention (used in ReasoningBlock coda)
+            use_hybrid_attention=False,
+            num_attention_layers=0,
+            attention_every_n=0,
+            # GLA (recurrent core)
+            gla_heads=8,
+            gla_expand_k=1.0,
+            gla_expand_v=2.0,
+            # Reasoning coda
+            sliding_window_size=512,
+            num_memory_tokens=32,
+            use_mqa=False,
+            # Ultra-reasoning zone (unused; mythos uses its own zones)
+            use_ultra_reasoning=False,
+            use_glu_ffn=True,
+            # SSM
+            use_selective_scan=True,
+            use_full_matrix=False,
+            # Mythos v3.0
+            use_recurrent_depth=True,
+            mythos_prelude_layers=4,
+            mythos_coda_layers=2,
+            mythos_max_loops=4,          # μ_rec=4 for ~100M budget
+            mythos_lora_rank=16,
+            mythos_act_threshold=0.99,
+            mythos_loop_embed_fraction=0.125,
+            mythos_random_loop_training=True,
+            gradient_checkpointing=False,
+        )
+
+    @classmethod
+    def rca_mythos_500m(cls) -> "RCAConfig":
+        """~500M params — RCA-Mythos, T4/P100 with gradient checkpointing.
+
+        Effective depth: 6 SSM + 8 loops × 1 GLA + 3 Reasoning
+        Parcae equivalent: ≈ 700M flat model quality
+
+        Training budget (7 hrs):
+          T4:   ~250M tokens   (batch=2, grad_accum=16, fp16, grad_ckpt)
+          P100: ~400M tokens   (batch=2, grad_accum=16, fp16, grad_ckpt)
+
+        Optimal μ_rec = 8 loops (Parcae C^0.40 at ~500M FLOP budget).
+        """
+        return cls(
+            state_dim=1024,
+            n_layers=10,
+            n_heads=16,
+            ssm_expand=2,
+            max_seq_len=4096,
+            dropout=0.1,
+            use_hybrid_attention=False,
+            num_attention_layers=0,
+            attention_every_n=0,
+            gla_heads=16,
+            gla_expand_k=1.0,
+            gla_expand_v=2.0,
+            sliding_window_size=512,
+            num_memory_tokens=32,
+            use_mqa=False,
+            use_ultra_reasoning=False,
+            use_glu_ffn=True,
+            use_selective_scan=True,
+            use_full_matrix=False,
+            use_recurrent_depth=True,
+            mythos_prelude_layers=6,
+            mythos_coda_layers=3,
+            mythos_max_loops=8,          # μ_rec=8 for ~500M budget
+            mythos_lora_rank=16,
+            mythos_act_threshold=0.99,
+            mythos_loop_embed_fraction=0.125,
+            mythos_random_loop_training=True,
+            gradient_checkpointing=True,
+        )
+
+    @classmethod
+    def rca_mythos_1b(cls) -> "RCAConfig":
+        """~1B params — RCA-Mythos, requires A100 or T4 with aggressive ckpt.
+
+        Effective depth: 8 SSM + 12 loops × 1 GLA + 4 Reasoning
+        Parcae equivalent: ≈ 1.5B flat model quality
+
+        Training budget (7 hrs):
+          T4:   ~100M tokens   (batch=1, grad_accum=32, fp16, grad_ckpt)
+          A100: ~800M tokens   (batch=4, grad_accum=8, bf16, grad_ckpt)
+
+        Optimal μ_rec = 12 loops (Parcae C^0.40 at ~1B FLOP budget).
+        """
+        return cls(
+            state_dim=1280,
+            n_layers=14,
+            n_heads=20,
+            ssm_expand=2,
+            max_seq_len=4096,
+            dropout=0.05,
+            use_hybrid_attention=False,
+            num_attention_layers=0,
+            attention_every_n=0,
+            gla_heads=20,
+            gla_expand_k=1.0,
+            gla_expand_v=2.0,
+            sliding_window_size=512,
+            num_memory_tokens=64,
+            use_mqa=True,
+            use_ultra_reasoning=False,
+            use_glu_ffn=True,
+            use_selective_scan=True,
+            use_full_matrix=False,
+            use_recurrent_depth=True,
+            mythos_prelude_layers=8,
+            mythos_coda_layers=4,
+            mythos_max_loops=12,         # μ_rec=12 for ~1B budget
+            mythos_lora_rank=32,
+            mythos_act_threshold=0.99,
+            mythos_loop_embed_fraction=0.125,
+            mythos_random_loop_training=True,
+            gradient_checkpointing=True,
+        )
+
+    @classmethod
+    def rca_mythos_3b(cls) -> "RCAConfig":
+        """~3B params — RCA-Mythos, requires multi-GPU or single A100 80GB.
+
+        Effective depth: 10 SSM + 16 loops × 1 GLA + 6 Reasoning
+        Parcae equivalent: ≈ 5B flat model quality
+
+        Training budget (1T tokens):
+          2×A100 80GB: ~18 days  (FSDP, bf16, grad_ckpt)
+          4×A100 40GB: ~20 days  (FSDP, bf16, grad_ckpt)
+
+        Optimal μ_rec = 16 loops (Parcae C^0.40 at ~3B FLOP budget).
+        """
+        return cls(
+            state_dim=2048,
+            n_layers=22,
+            n_heads=32,
+            ssm_expand=2,
+            max_seq_len=8192,
+            dropout=0.05,
+            use_hybrid_attention=False,
+            num_attention_layers=0,
+            attention_every_n=0,
+            gla_heads=32,
+            gla_expand_k=1.0,
+            gla_expand_v=2.0,
+            sliding_window_size=1024,
+            num_memory_tokens=64,
+            use_mqa=True,
+            use_ultra_reasoning=False,
+            use_glu_ffn=True,
+            use_selective_scan=True,
+            use_full_matrix=False,
+            use_recurrent_depth=True,
+            mythos_prelude_layers=10,
+            mythos_coda_layers=6,
+            mythos_max_loops=16,         # μ_rec=16 for ~3B budget
+            mythos_lora_rank=32,
+            mythos_act_threshold=0.99,
+            mythos_loop_embed_fraction=0.125,
+            mythos_random_loop_training=True,
             gradient_checkpointing=True,
         )

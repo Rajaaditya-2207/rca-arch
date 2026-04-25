@@ -231,42 +231,7 @@ class GatedLinearAttention(nn.Module):
 
         new_state = total_decay.unsqueeze(-1).unsqueeze(-1) * state + kv_update
 
-        # Register grad hooks ONLY for layer 26 to avoid spam
-        if not hasattr(self, "_hook_registered") and self.dim == 64:  # hack to find layer 26
-            print(f"FWD q has inf: {torch.isinf(q).any().item()}, k has inf: {torch.isinf(k).any().item()}")
-            print(f"FWD attn BEFORE decay has inf: {torch.isinf(attn).any().item()}")
-            print(f"FWD decay_matrix has inf: {torch.isinf(decay_matrix).any().item()}")
-            print(f"FWD attn_decayed has inf: {torch.isinf(attn * decay_matrix).any().item()}")
-            
-            def make_hook(name):
-                return lambda g: print(f"Hook {name}: has_nan={torch.isnan(g).any().item()}, sum={g.abs().sum().item()}")
-            
-            output.retain_grad()
-            output.register_hook(make_hook("output"))
-            intra_out.retain_grad()
-            intra_out.register_hook(make_hook("intra_out"))
-            cross_out.retain_grad()
-            cross_out.register_hook(make_hook("cross_out"))
-            attn.retain_grad()
-            attn.register_hook(make_hook("attn_after_decay"))
-            decay_matrix.retain_grad()
-            decay_matrix.register_hook(make_hook("decay_matrix"))
-            q.retain_grad()
-            q.register_hook(make_hook("q"))
-            k.retain_grad()
-            k.register_hook(make_hook("k"))
-            v.retain_grad()
-            v.register_hook(make_hook("v"))
-            kv_update.retain_grad()
-            kv_update.register_hook(make_hook("kv_update"))
-            new_state.retain_grad()
-            new_state.register_hook(make_hook("new_state"))
-            weighted_k.retain_grad()
-            weighted_k.register_hook(make_hook("weighted_k"))
-            decay_to_end.retain_grad()
-            decay_to_end.register_hook(make_hook("decay_to_end"))
-            cumlog.retain_grad()
-            cumlog.register_hook(make_hook("cumlog"))
+
 
         return output.reshape(B, L, H * dv), new_state
 

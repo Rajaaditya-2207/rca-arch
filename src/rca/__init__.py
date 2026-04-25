@@ -24,12 +24,14 @@ A hybrid sequence modeling architecture combining sliding window attention,
 linear recurrent mechanisms (GLA/SSM), and long-context cross-attention.
 """
 
-__version__ = "1.0.2"
+__version__ = "1.3.0"
 __author__ = "Rajaaditya.R"
 __email__ = "rajaaditya.aadhi@gmail.com"
 
 from .config import RCAConfig
 from .modeling.rca_model import RCAModel, RCAForCausalLM
+from .modeling.rca_mythos_model import RCAMythosModel, RCAMythosForCausalLM
+from .modeling.recurrent_core import RecurrentCore
 from .modeling.outputs import CausalLMOutput, ModelOutput, BaseModelOutput
 from .trainer import RCATrainer, TrainingArguments
 from .generator import RCAGenerator
@@ -46,13 +48,22 @@ from .layers.gla import GatedLinearAttention
 from .layers.sliding_attention import SlidingWindowAttention
 from .layers.norm import RMSNorm, DeepNorm
 from .layers.positions import ALiBiPositionEmbedding, RotaryPositionEmbedding
+# RCA-Mythos v3.0 layers
+from .layers.lti_injection import LTIInjection
+from .layers.act_halting import ACTHalting
+from .layers.loop_embedding import LoopIndexEmbedding
+from .layers.lora_depth import DepthLoRAAdapter
 
 __all__ = [
     # Config
     "RCAConfig",
-    # Models
+    # ── v2.0 Models ─────────────────────────────────────────────────────────
     "RCAModel",
     "RCAForCausalLM",
+    # ── v3.0 Mythos Models ──────────────────────────────────────────────────
+    "RCAMythosModel",
+    "RCAMythosForCausalLM",
+    "RecurrentCore",
     # Outputs
     "CausalLMOutput",
     "ModelOutput",
@@ -71,7 +82,7 @@ __all__ = [
     "export_to_onnx",
     "save_pretrained",
     "load_pretrained",
-    # Layers (advanced)
+    # ── Core Layers (v2.0) ───────────────────────────────────────────────────
     "compute_parallel_scan",
     "parallel_scan_linear",
     "TRITON_AVAILABLE",
@@ -84,4 +95,9 @@ __all__ = [
     "DeepNorm",
     "ALiBiPositionEmbedding",
     "RotaryPositionEmbedding",
+    # ── Mythos Layers (v3.0) ─────────────────────────────────────────────────
+    "LTIInjection",
+    "ACTHalting",
+    "LoopIndexEmbedding",
+    "DepthLoRAAdapter",
 ]
